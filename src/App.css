@@ -1,0 +1,14 @@
+main {
+	width: 100vw;
+	height: 100vh;
+	padding: 12px;
+}
+
+.theme-light {
+	background-color: beige;
+}
+
+.theme-dark {
+	background-color: darkslategrey;
+	color: aliceblue;
+}
