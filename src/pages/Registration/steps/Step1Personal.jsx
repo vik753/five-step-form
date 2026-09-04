@@ -3,6 +3,7 @@ import {useForm} from "react-hook-form";
 import {Eye, EyeOff} from 'lucide-react';
 import * as yup from "yup";
 import {yupResolver} from "@hookform/resolvers/yup";
+import {useNavigate} from "react-router";
 
 const firstStepSchema = yup.object().shape({
 	firstname: yup.string().required('First name is required').min(2, 'First name must be at least 2 characters').matches(/^[\p{L}\s]/u, "Only letters are allowed"),
@@ -17,6 +18,7 @@ const firstStepSchema = yup.object().shape({
 
 
 export const Step1Personal = () => {
+	const navigate = useNavigate();
 
 	const getInitialValues = () => {
 		const step1Data = localStorage.getItem("step1Data");
@@ -37,6 +39,7 @@ export const Step1Personal = () => {
 	const {
 		register,
 		handleSubmit,
+		setError,
 		formState: {errors, isSubmitting, isValid, isDirty},
 	} = useForm({
 		resolver: yupResolver(firstStepSchema),
@@ -51,11 +54,29 @@ export const Step1Personal = () => {
 		setShowPassword((prev) => !prev);
 	};
 
-	const onSubmit = (data) => {
-		const formData = {...data};
-		delete formData.confirmPassword;
-		const step1Data = {step1: formData};
-		localStorage.setItem("step1Data", JSON.stringify(step1Data));
+	const onSubmit = async (data) => {
+		try {
+			const formData = {...data};
+
+			const isPassCorrect = await new Promise((resolve) => {
+				setTimeout(() => {
+					resolve(formData.password === formData.confirmPassword);
+				}, 1000)
+			})
+
+			if (!isPassCorrect) {
+				setError("confirmPassword", {type: "manual", message: "Passwords do not match"});
+				return;
+			}
+
+			delete formData.confirmPassword;
+			const step1Data = {step1: formData};
+			localStorage.setItem("step1Data", JSON.stringify(step1Data));
+
+			navigate("/step2");
+		} catch (err) {
+			console.log(err);
+		}
 	}
 
 	return (
