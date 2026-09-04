@@ -1,28 +1,49 @@
-import "./App.css";
-import {RegistrationForm} from "@/pages/Registration/RegistrationForm.jsx";
-import {BrowserRouter, Routes, Route} from "react-router";
-import {Step1Personal} from "@/pages/Registration/steps/Step1Personal.jsx";
-import {Step2Address} from "@/pages/Registration/steps/Step2Address.jsx";
-import {Step3Additional} from "@/pages/Registration/steps/Step3Additional.jsx";
-import {Step4Review} from "@/pages/Registration/steps/Step4Review.jsx";
+import {useState, useTransition} from 'react';
 
+// Имитация тяжелого массива данных
+const heavyList = Array.from({length: 10000}, (_, i) => `Item ${i + 1} uuid: ${crypto.randomUUID()}`);
 
-function App() {
+export const App = () => {
+	const [query, setQuery] = useState('');
+	const [filteredList, setFilteredList] = useState(heavyList);
 
+	const [isPending, startTransition] = useTransition();
+
+	const handleChange = (e) => {
+		const value = e.target.value;
+
+		// 1. СРОЧНОЕ ОБНОВЛЕНИЕ
+		// Инпут обновится мгновенно, без задержек
+		setQuery(value);
+
+		// 2. НЕСРОЧНОЕ ОБНОВЛЕНИЕ (Transition)
+		// React начнет фильтрацию в фоне. Если пользователь напечатает
+		// следующую букву до окончания фильтрации, React прервет старую работу
+		// и начнет новую.
+		startTransition(() => {
+			const filtered = heavyList.filter((item) => item.toLowerCase().includes(value.toLowerCase()));
+			setFilteredList(filtered);
+		});
+	};
 
 	return (
-			<BrowserRouter>
-				<Routes>
-					<Route path="/" element={<RegistrationForm/>}>
-						<Route path="step1" element={<Step1Personal/>}/>
-						<Route path="step2" element={<Step2Address/>}/>
-						<Route path="step3" element={<Step3Additional/>}/>
-						<Route path="step4" element={<Step4Review/>}/>
-					</Route>
+			<div>
+				<input
+						type="text"
+						value={query}
+						onChange={handleChange}
+						placeholder="Поиск..."
+				/>
 
-				</Routes>
-			</BrowserRouter>
+				{/* Пока список фильтруется, показываем индикатор загрузки */}
+				{isPending && <p>Фильтрация результатов...</p>}
+
+				{filteredList?.length > 0 ? <ul style={{opacity: isPending ? 0.5 : 1}}>
+							{filteredList.map(item => (
+									<li key={item}>{item}</li>
+							))}
+						</ul>
+						: <p>No results</p>}
+			</div>
 	);
-}
-
-export default App;
+};
