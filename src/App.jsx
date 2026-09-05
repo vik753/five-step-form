@@ -1,49 +1,88 @@
-import {useState, useTransition} from 'react';
+import {useEffect, useMemo, useRef, useState, useTransition} from 'react';
 
-// Имитация тяжелого массива данных
-const heavyList = Array.from({length: 10000}, (_, i) => `Item ${i + 1} uuid: ${crypto.randomUUID()}`);
+
+const Debounce = (cb) => {
+	let timerId;
+
+	return (...args) => {
+		if (timerId) {
+			clearTimeout(timerId)
+		}
+
+		timerId = setTimeout(() => {
+			cb(...args)
+		}, 500)
+	}
+}
 
 export const App = () => {
-	const [query, setQuery] = useState('');
-	const [filteredList, setFilteredList] = useState(heavyList);
 
+	const [productData, setProductData] = useState({});
 	const [isPending, startTransition] = useTransition();
 
-	const handleChange = (e) => {
-		const value = e.target.value;
+	const getProducts = async () => {
+		try {
+			const rawData = await fetch(`https://dummyjson.com/products?limit=100`)
+			const data = await rawData.json();
+			setProductData(data);
+		} catch (err) {
+			console.log(err);
+		}
+	}
 
-		// 1. СРОЧНОЕ ОБНОВЛЕНИЕ
-		// Инпут обновится мгновенно, без задержек
-		setQuery(value);
+	useEffect(() => {
+		getProducts()
+	}, []);
 
-		// 2. НЕСРОЧНОЕ ОБНОВЛЕНИЕ (Transition)
-		// React начнет фильтрацию в фоне. Если пользователь напечатает
-		// следующую букву до окончания фильтрации, React прервет старую работу
-		// и начнет новую.
-		startTransition(() => {
-			const filtered = heavyList.filter((item) => item.toLowerCase().includes(value.toLowerCase()));
-			setFilteredList(filtered);
-		});
-	};
+	const filterProducts = (e) => {
+		const filter = e.target.value;
+		if (!filter || filter === '') {
+			startTransition(() => {
+				getProducts();
+				return;
+			})
+		}
+
+		startTransition(async () => {
+			try {
+				const data = await fetch(`https://dummyjson.com/products/search?q=${filter}&limit=0`);
+				if (!data.ok) {
+					throw new Error('Error filter product')
+				}
+				const products = await data.json();
+				console.log('product', products)
+				setProductData(products)
+			} catch (err) {
+				console.log(err);
+			}
+		})
+	}
+
+	const debouncedSearch = useMemo(() => Debounce(filterProducts), [])
+
 
 	return (
-			<div>
-				<input
-						type="text"
-						value={query}
-						onChange={handleChange}
-						placeholder="Поиск..."
-				/>
+			<div style={{padding: "24px"}}>
+				<div style={{padding: '12px'}}>
+					<label htmlFor="filter">Filter products: </label>
+					<input type="text" id="filter" onChange={debouncedSearch}/>
+					{/* Можно добавить маленький индикатор загрузки рядом с инпутом */}
+					{isPending && <span style={{marginLeft: "10px", color: "blue"}}>Updating...</span>}
+				</div>
 
-				{/* Пока список фильтруется, показываем индикатор загрузки */}
-				{isPending && <p>Фильтрация результатов...</p>}
-
-				{filteredList?.length > 0 ? <ul style={{opacity: isPending ? 0.5 : 1}}>
-							{filteredList.map(item => (
-									<li key={item}>{item}</li>
-							))}
-						</ul>
-						: <p>No results</p>}
+				{/* Оставляем список в DOM, но делаем его полупрозрачным во время поиска */}
+				<div style={{opacity: isPending ? 0.4 : 1, transition: "opacity 0.2s"}}>
+					{productData?.products?.map((p) => {
+						return (
+								<div key={p.id}>
+									<hr/>
+									<h3>{p.title}</h3>
+									<p>{p.description}</p>
+									<p>{p.category}</p>
+								</div>
+						);
+					})}
+				</div>
 			</div>
 	);
 };
