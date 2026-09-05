@@ -1,88 +1,133 @@
-import {useEffect, useMemo, useRef, useState, useTransition} from 'react';
-
-
-const Debounce = (cb) => {
-	let timerId;
-
-	return (...args) => {
-		if (timerId) {
-			clearTimeout(timerId)
-		}
-
-		timerId = setTimeout(() => {
-			cb(...args)
-		}, 500)
-	}
-}
+import {useEffect, useState, useOptimistic, useTransition, useRef} from 'react';
 
 export const App = () => {
+	// 1. Реальный стейт (база правды)
+	const [comments, setComments] = useState([]);
+	const [isLoading, setIsLoading] = useState(true);
 
-	const [productData, setProductData] = useState({});
+	// 2. Хук useTransition для ручного управления асинхронной транзакцией
 	const [isPending, startTransition] = useTransition();
 
-	const getProducts = async () => {
-		try {
-			const rawData = await fetch(`https://dummyjson.com/products?limit=100`)
-			const data = await rawData.json();
-			setProductData(data);
-		} catch (err) {
-			console.log(err);
-		}
-	}
+	const formRef = useRef(null);
 
+	// Первоначальная загрузка данных
 	useEffect(() => {
-		getProducts()
+		fetch('https://dummyjson.com/comments?limit=5')
+				.then((res) => res.json())
+				.then((data) => {
+					setComments(data.comments);
+					setIsLoading(false);
+				});
 	}, []);
 
-	const filterProducts = (e) => {
-		const filter = e.target.value;
-		if (!filter || filter === '') {
-			startTransition(() => {
-				getProducts();
-				return;
-			})
-		}
+	// 3. Настраиваем оптимистичный UI
+	const [optimisticComments, addOptimisticComment] = useOptimistic(
+			comments,
+			(currentComments, newText) => [
+				...currentComments,
+				{
+					id: Math.random().toString(),
+					body: newText,
+					user: {username: 'Вы (отправка...)'},
+					isSending: true,
+				},
+			]
+	);
 
+	// Функция для реального запроса на сервер
+	const handleAddComment = async (text) => {
+		const response = await fetch('https://dummyjson.com/comments/add', {
+			method: 'POST',
+			headers: {'Content-Type': 'application/json'},
+			body: JSON.stringify({
+				body: text,
+				postId: 3,
+				userId: 5,
+			}),
+		});
+
+		if (!response.ok || Math.random() > 0.3) throw new Error('Ошибка сервера');
+
+		const newComment = await response.json();
+
+		// Искусственная пауза, чтобы разглядеть процесс в UI
+		await new Promise(resolve => setTimeout(resolve, 1000));
+
+		setComments((prev) => [...prev, newComment]);
+	};
+
+	// 4. Классический обработчик onSubmit
+	const handleSubmit = (e) => {
+		e.preventDefault(); // Отменяем перезагрузку страницы
+
+		// Достаем данные из формы
+		const formData = new FormData(e.target);
+		const text = formData.get('body');
+
+		if (!text || text.trim() === '') return;
+
+		// Очищаем форму мгновенно, чтобы пользователь мог писать дальше
+		formRef.current.reset();
+
+		// 5. Оборачиваем весь процесс в startTransition
 		startTransition(async () => {
+			// Оптимистичное обновление UI ДОЛЖНО быть внутри startTransition
+			addOptimisticComment(text);
+
 			try {
-				const data = await fetch(`https://dummyjson.com/products/search?q=${filter}&limit=0`);
-				if (!data.ok) {
-					throw new Error('Error filter product')
-				}
-				const products = await data.json();
-				console.log('product', products)
-				setProductData(products)
-			} catch (err) {
-				console.log(err);
+				await handleAddComment(text);
+			} catch (error) {
+				console.error('Ошибка:', error);
+				alert('Не удалось отправить комментарий!');
 			}
-		})
-	}
+		});
+	};
 
-	const debouncedSearch = useMemo(() => Debounce(filterProducts), [])
-
+	if (isLoading) return <p style={{padding: '24px'}}>Загрузка комментариев...</p>;
 
 	return (
-			<div style={{padding: "24px"}}>
-				<div style={{padding: '12px'}}>
-					<label htmlFor="filter">Filter products: </label>
-					<input type="text" id="filter" onChange={debouncedSearch}/>
-					{/* Можно добавить маленький индикатор загрузки рядом с инпутом */}
-					{isPending && <span style={{marginLeft: "10px", color: "blue"}}>Updating...</span>}
+			<div style={{padding: '24px', maxWidth: '600px'}}>
+				<div style={{display: 'flex', justifyContent: 'space-between', alignItems: 'center'}}>
+					<h2>Комментарии</h2>
+					{/* Используем isPending из useTransition для показа глобального статуса */}
+					{isPending && <span style={{color: 'blue', fontSize: '14px'}}>Синхронизация...</span>}
 				</div>
 
-				{/* Оставляем список в DOM, но делаем его полупрозрачным во время поиска */}
-				<div style={{opacity: isPending ? 0.4 : 1, transition: "opacity 0.2s"}}>
-					{productData?.products?.map((p) => {
-						return (
-								<div key={p.id}>
-									<hr/>
-									<h3>{p.title}</h3>
-									<p>{p.description}</p>
-									<p>{p.category}</p>
-								</div>
-						);
-					})}
+				<div style={{display: 'flex', flexDirection: 'column', gap: '12px', marginBottom: '24px'}}>
+					{optimisticComments.map((comment) => (
+							<div
+									key={comment.id}
+									style={{
+										padding: '12px',
+										border: '1px solid #ccc',
+										borderRadius: '8px',
+										opacity: comment.isSending ? 0.5 : 1,
+										transition: 'opacity 0.3s',
+									}}
+							>
+								<p style={{margin: '0 0 8px 0', fontWeight: 'bold'}}>
+									{comment.user?.username}
+								</p>
+								<p style={{margin: 0}}>{comment.body}</p>
+							</div>
+					))}
 				</div>
+
+				{/* Используем onSubmit вместо action */}
+				<form onSubmit={handleSubmit} ref={formRef} style={{display: 'flex', gap: '8px'}}>
+					<input
+							type="text"
+							name="body"
+							placeholder="Написать комментарий..."
+							style={{flexGrow: 1, padding: '8px'}}
+							// Блокируем инпут, пока идет запрос (хотя для Оптимистичного UI
+							// часто оставляют разблокированным, чтобы писать несколько комментариев подряд)
+							disabled={isPending}
+					/>
+					<button type="submit" style={{padding: '8px 16px'}} disabled={isPending}>
+						{isPending ? 'Летит...' : 'Отправить'}
+					</button>
+				</form>
 			</div>
 	);
 };
